@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#89B4F8"/>
+      <stop offset="50%" stop-color="#7B8FF5"/>
+      <stop offset="100%" stop-color="#A78BDA"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE55C"/>
+      <stop offset="100%" stop-color="#FF7020"/>
+    </linearGradient>
+    <linearGradient id="bodySheen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="white" stop-opacity="1"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0.82"/>
+    </linearGradient>
+    <linearGradient id="highlight" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="white" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <rect width="128" height="64" rx="28" fill="url(#highlight)"/>
+
+  <g transform="translate(64,64) rotate(-35) translate(-64,-64)">
+    <path d="M60 107 C55 121 58 130 64 128 C70 130 73 121 68 107 Z" fill="url(#flame)" opacity="0.95"/>
+    <path d="M62 110 C60 119 62 125 64 124 C66 125 68 119 66 110 Z" fill="#FFF5A0" opacity="0.7"/>
+    <rect x="54" y="97" width="20" height="11" rx="5" fill="url(#bodySheen)"/>
+    <path d="M64 13 C64 13 41 34 37 63 L37 89 L64 102 L91 89 L91 63 C87 34 64 13 64 13 Z" fill="url(#bodySheen)"/>
+    <path d="M37 70 L17 96 L37 89 Z" fill="white" opacity="0.9"/>
+    <path d="M91 70 L111 96 L91 89 Z" fill="white" opacity="0.9"/>
+    <circle cx="64" cy="57" r="14" fill="url(#bg)" opacity="0.85"/>
+    <circle cx="64" cy="57" r="10" fill="white" opacity="0.18"/>
+    <ellipse cx="61" cy="53" rx="4" ry="3" fill="white" opacity="0.45"/>
+  </g>
+</svg>
