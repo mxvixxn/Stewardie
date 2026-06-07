@@ -26,10 +26,27 @@ hide/show path — it works with every menu bar app.
   Accessibility permission management.
 - Right-click (or ⌥/⌃-click) the menu bar icon for the menu.
 
+## Installation
+
+### For Regular Users
+
+Download the pre-built app from [Releases](https://github.com/mxvixxn/Stewardie/releases):
+
+1. Download `Stewardie.app.zip` from the latest release
+2. Unzip it → you get `Stewardie.app`
+3. Drag `Stewardie.app` to your **Applications** folder
+4. Use Spotlight (⌘-Space) to search for "Stewardie" and open it
+
+**First run:** The app will ask for Accessibility permission to list hidden items in the Archive. Grant it via the Settings window or System Settings > Privacy & Security > Accessibility.
+
+### For Developers
+
+If you want to build from source, see [Build & Run](#build--run) below.
+
 ## Requirements
 
 - macOS 13 or later
-- Swift toolchain (Swift 6 / Xcode 16+)
+- Swift toolchain (for building from source; Swift 6 / Xcode 16+)
 
 ## Build & Run
 
