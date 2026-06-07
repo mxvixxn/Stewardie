@@ -4,9 +4,10 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = MenuBarItemStore()
-    private var controlItem: ControlItem?
+    private var divider: StewardieDivider?
     private var statusItem: NSStatusItem?
-    private var controlPanelController: NSWindowController?
+    private var archiveWindowController: NSWindowController?
+    private var settingsWindowController: NSWindowController?
     private var keyEventMonitor: Any?
 
     // MARK: - App Lifecycle
@@ -16,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureApplicationMenu()
         configureKeyboardShortcuts()
         configureStatusItem()
-        controlItem = ControlItem(autosaveName: "Stewardie.HiddenSectionDivider")
+        divider = StewardieDivider(autosaveName: "Stewardie.HiddenSectionDivider")
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -121,18 +122,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         {
             showStatusMenu()
         } else {
-            controlItem?.toggle()
+            divider?.toggle()
         }
     }
 
+    /// 메뉴를 직접 좌표 지정으로 popUp하면(menu.popUp(positioning:at:in:))
+    /// 메뉴가 화면 경계와 겹치면서 첫 항목이 스크롤 화살표 뒤로 가려지는
+    /// 현상이 있었음 (마우스를 올리면 그제서야 스크롤되어 나타남).
+    /// `statusItem.menu`에 메뉴를 임시로 연결하고 표준 클릭 경로로 띄우면
+    /// AppKit이 메뉴바 기준으로 올바른 위치를 계산해 이 문제가 사라진다.
     private func showStatusMenu() {
-        guard let button = statusItem?.button else { return }
+        guard let statusItem else { return }
         let menu = makeStatusMenu()
-        menu.popUp(
-            positioning: nil,
-            at: NSPoint(x: 0, y: button.bounds.height + 5),
-            in: button
-        )
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        // performClick은 동기적으로 메뉴를 띄우고 닫힐 때까지 블록되므로,
+        // 닫힌 직후 menu를 해제해 좌클릭이 다시 toggle 동작을 타도록 되돌린다.
+        statusItem.menu = nil
     }
 
     // MARK: - Status Menu
@@ -140,36 +146,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let isHiding = controlItem?.isHiding ?? false
-
-        // 토글 항목
-        let toggleItem = NSMenuItem(
-            title: isHiding ? "숨긴 항목 보이기" : "항목 숨기기",
-            action: #selector(toggleHiddenSection),
-            keyEquivalent: ""
+        // 보관함
+        let archiveItem = NSMenuItem(
+            title: "보관함 열기",
+            action: #selector(openArchive),
+            keyEquivalent: "a"
         )
-        toggleItem.target = self
-        menu.addItem(toggleItem)
+        archiveItem.image = NSImage(systemSymbolName: "archivebox", accessibilityDescription: "보관함")
+        archiveItem.target = self
+        menu.addItem(archiveItem)
 
-        menu.addItem(.separator())
-
-        // 관리 패널
-        let panelItem = NSMenuItem(
-            title: "관리 패널 열기",
-            action: #selector(openControlPanel),
+        // 설정
+        let settingsItem = NSMenuItem(
+            title: "설정 열기",
+            action: #selector(openSettings),
             keyEquivalent: ","
         )
-        panelItem.target = self
-        menu.addItem(panelItem)
-
-        // 새로고침
-        let refreshItem = NSMenuItem(
-            title: "메뉴바 항목 새로고침",
-            action: #selector(refreshItems),
-            keyEquivalent: "r"
-        )
-        refreshItem.target = self
-        menu.addItem(refreshItem)
+        settingsItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "설정")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(.separator())
 
@@ -187,17 +182,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Actions
 
-    @objc private func toggleHiddenSection() {
-        controlItem?.toggle()
+    @objc private func openArchive() {
+        showArchive()
     }
 
-    @objc private func openControlPanel() {
-        showControlPanel()
-    }
-
-    @objc private func refreshItems() {
-        store.refreshAvailableItems()
-        showControlPanel()
+    @objc private func openSettings() {
+        showSettings()
     }
 
     @objc private func quitStewardie() {
@@ -205,33 +195,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func closeKeyWindow() {
-        if let window = NSApp.keyWindow ?? controlPanelController?.window {
+        if let window = NSApp.keyWindow {
             window.performClose(nil)
         }
     }
 
-    // MARK: - Control Panel
+    // MARK: - Archive Window
 
-    private func showControlPanel() {
-        store.refreshAccessibilityPermission()
+    private func showArchive() {
+        guard let divider else { return }
 
-        if controlPanelController == nil {
-            let rootView = StewardieControlPanel(store: store)
+        if archiveWindowController == nil {
+            let rootView = StewardieArchiveView(divider: divider, store: store)
             let hostingController = NSHostingController(rootView: rootView)
             let window = NSWindow(contentViewController: hostingController)
 
-            window.title = StewardieConstants.appName
-            window.setContentSize(NSSize(width: 760, height: 540))
-            window.minSize = NSSize(width: 640, height: 460)
+            window.title = "보관함"
+            window.setContentSize(NSSize(width: 620, height: 480))
+            window.minSize = NSSize(width: 560, height: 420)
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
             window.center()
 
-            controlPanelController = NSWindowController(window: window)
+            archiveWindowController = NSWindowController(window: window)
         }
 
+        presentWindow(of: archiveWindowController)
+    }
+
+    // MARK: - Settings Window
+
+    private func showSettings() {
+        if settingsWindowController == nil {
+            let rootView = StewardieSettingsView(store: store)
+            let hostingController = NSHostingController(rootView: rootView)
+            let window = NSWindow(contentViewController: hostingController)
+
+            window.title = "설정"
+            window.setContentSize(NSSize(width: 560, height: 460))
+            window.minSize = NSSize(width: 520, height: 420)
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.isReleasedWhenClosed = false
+            window.center()
+
+            settingsWindowController = NSWindowController(window: window)
+        }
+
+        presentWindow(of: settingsWindowController)
+    }
+
+    private func presentWindow(of controller: NSWindowController?) {
         NSApp.activate(ignoringOtherApps: true)
-        controlPanelController?.showWindow(nil)
-        controlPanelController?.window?.makeKeyAndOrderFront(nil)
+        controller?.showWindow(nil)
+        controller?.window?.makeKeyAndOrderFront(nil)
     }
 }

@@ -2,4 +2,9 @@
 .build/
 dist/
 DerivedData/
+
+# Xcode / SwiftPM per-user state
 *.xcuserdata/
+xcuserdata/
+*.xcuserstate
+.swiftpm/xcode/**/xcuserdata/

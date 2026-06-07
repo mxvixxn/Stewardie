@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class MenuBarItemStore: ObservableObject {
     @Published private(set) var items: [MenuBarItem]
+    @Published private(set) var hiddenSectionItems: [MenuBarItem] = []
+    @Published private(set) var hiddenSectionStatusMessage: String = "보관함을 열면 현재 들어 있는 항목을 찾아볼게요."
     @Published private(set) var statusMessage: String
     @Published private(set) var hasAccessibilityPermission: Bool
     @Published private(set) var hasMenuBarDiscovery: Bool
@@ -33,26 +35,6 @@ final class MenuBarItemStore: ObservableObject {
         if items.isEmpty {
             items = MenuBarItem.sampleItems
         }
-    }
-
-    var hiddenCount: Int {
-        items.filter { $0.visibility == .hidden }.count
-    }
-
-    var removedCount: Int {
-        items.filter { $0.visibility == .removed }.count
-    }
-
-    var visibleCount: Int {
-        items.filter { $0.visibility == .visible }.count
-    }
-
-    var totalCount: Int {
-        items.count
-    }
-
-    var hiddenItems: [MenuBarItem] {
-        items.filter { $0.visibility == .hidden }
     }
 
     var accessibilityPermissionTarget: String {
@@ -103,79 +85,33 @@ final class MenuBarItemStore: ObservableObject {
         }
     }
 
-    func testPress(_ item: MenuBarItem) {
-        activate(item)
-    }
-
-    func activate(_ item: MenuBarItem) {
+    /// 보관함(구분선 왼쪽)에 현재 들어 있는 항목을 찾아 `hiddenSectionItems`에 채운다.
+    /// `boundaryX`는 구분선이 표준 크기일 때의 좌측 경계 좌표.
+    func refreshHiddenSectionItems(boundaryX: CGFloat?) {
         refreshAccessibilityPermission()
 
         guard hasAccessibilityPermission else {
-            statusMessage = "Accessibility 권한을 먼저 허용해 주세요."
+            hiddenSectionItems = []
+            hiddenSectionStatusMessage = "Accessibility 권한을 허용하면 보관함 안의 항목을 찾아볼 수 있어요."
+            return
+        }
+
+        guard let boundaryX else {
+            hiddenSectionItems = []
+            hiddenSectionStatusMessage = "구분선 위치를 아직 확인하지 못했어요. 항목을 한 번 숨겼다 꺼내면 위치가 기억돼요."
             return
         }
 
         do {
-            try service.press(item)
-            statusMessage = "'\(item.title)' 항목에 누르기 동작을 보냈어요."
+            let found = try service.hiddenItems(leftOf: boundaryX)
+            hiddenSectionItems = found
+            hiddenSectionStatusMessage = found.isEmpty
+                ? "보관함 안에서 찾은 항목이 없어요. 구분선 왼쪽에 아이콘을 옮겨뒀는지 확인해 보세요."
+                : "보관함 안에서 \(found.count)개 항목을 찾았어요."
         } catch {
-            statusMessage = error.localizedDescription
+            hiddenSectionItems = []
+            hiddenSectionStatusMessage = error.localizedDescription
         }
-    }
-
-    func toggleHidden(for item: MenuBarItem) {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else {
-            return
-        }
-
-        switch items[index].visibility {
-        case .visible:
-            items[index].visibility = .hidden
-            statusMessage = "'\(items[index].title)' 항목을 Stewardie 보관함에 숨겼어요."
-        case .hidden:
-            items[index].visibility = .visible
-            statusMessage = "'\(items[index].title)' 항목을 표시 목록으로 되돌렸어요."
-        case .removed:
-            items[index].visibility = .visible
-            statusMessage = "'\(items[index].title)' 항목을 복원했어요."
-        }
-
-        saveItems()
-    }
-
-    func remove(_ item: MenuBarItem) {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else {
-            return
-        }
-
-        items[index].visibility = .removed
-        statusMessage = "'\(items[index].title)' 항목을 제거 목록으로 옮겼어요."
-        saveItems()
-    }
-
-    func restore(_ item: MenuBarItem) {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else {
-            return
-        }
-
-        items[index].visibility = .visible
-        statusMessage = "'\(items[index].title)' 항목을 복원했어요."
-        saveItems()
-    }
-
-    func revealHiddenItems() {
-        let hiddenIndices = items.indices.filter { items[$0].visibility == .hidden }
-        guard !hiddenIndices.isEmpty else {
-            statusMessage = "숨김 보관함에 들어 있는 항목이 없어요."
-            return
-        }
-
-        for index in hiddenIndices {
-            items[index].visibility = .visible
-        }
-
-        statusMessage = "\(hiddenIndices.count)개 숨김 항목을 표시 목록으로 되돌렸어요."
-        saveItems()
     }
 
     private func merge(_ discoveredItems: [MenuBarItem]) {

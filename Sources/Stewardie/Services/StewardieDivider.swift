@@ -9,7 +9,7 @@ import AppKit
 /// 사용자가 ⌘-드래그로 메뉴바 아이콘을 이 구분자의 왼쪽에 배치하면
 /// Stewardie 아이콘 클릭 한 번으로 해당 아이콘들을 숨기거나 보여줄 수 있다.
 @MainActor
-final class ControlItem {
+final class StewardieDivider: ObservableObject {
 
     // MARK: - Types
 
@@ -25,13 +25,19 @@ final class ControlItem {
         static let expanded: CGFloat = 10_000
     }
 
-    private static let stateKey = "Stewardie.ControlItem.State"
+    private static let stateKey = "Stewardie.Divider.State"
 
     // MARK: - Properties
 
     let statusItem: NSStatusItem
 
-    private(set) var state: State {
+    /// 구분선이 표준 크기일 때의 화면상 x 좌표 (왼쪽 경계).
+    /// 이 값보다 왼쪽(x가 더 작은 곳)에 있는 항목들이 "숨김 대상"이다.
+    /// 펼쳐진 상태(10,000pt)에서는 구분선 자체가 화면 밖까지 늘어나므로
+    /// 이 값을 그대로 쓰면 안 되고, 표준 상태였을 때 캐시해 둔 값을 사용한다.
+    @Published private(set) var boundaryScreenX: CGFloat?
+
+    @Published private(set) var state: State {
         didSet {
             applyState()
             persistState()
@@ -42,13 +48,15 @@ final class ControlItem {
 
     init(autosaveName: String) {
         let saved = UserDefaults.standard.string(forKey: Self.stateKey)
-        self.state = State(rawValue: saved ?? "") ?? .showItems
+        let initialState = State(rawValue: saved ?? "") ?? .showItems
+        let initialLength = (initialState == .hideItems) ? Length.expanded : Length.standard
 
-        let initialLength = (state == .hideItems) ? Length.expanded : Length.standard
         self.statusItem = NSStatusBar.system.statusItem(withLength: initialLength)
+        self.state = initialState
         self.statusItem.autosaveName = autosaveName
 
         applyState()
+        captureBoundaryIfPossible()
     }
 
     // MARK: - Public
@@ -76,10 +84,24 @@ final class ControlItem {
         case .showItems:
             statusItem.length = Length.standard
             updateButton(dividerVisible: true)
+            // 표준 크기로 자리 잡은 뒤(레이아웃 반영 후) 경계 좌표를 캐시
+            DispatchQueue.main.async { [weak self] in
+                self?.captureBoundaryIfPossible()
+            }
         case .hideItems:
             statusItem.length = Length.expanded
             updateButton(dividerVisible: false)
         }
+    }
+
+    /// 표준 크기 상태에서만 경계 좌표를 신뢰할 수 있으므로,
+    /// 그때 측정해서 캐시해 둔다 (펼쳐진 상태에서는 갱신하지 않음).
+    private func captureBoundaryIfPossible() {
+        guard state == .showItems,
+              let frame = statusItem.button?.window?.frame else {
+            return
+        }
+        boundaryScreenX = frame.origin.x
     }
 
     private func updateButton(dividerVisible: Bool) {

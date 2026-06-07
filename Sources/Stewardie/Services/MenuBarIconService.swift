@@ -9,6 +9,11 @@ protocol MenuBarIconProviding {
 
     func availableItems() throws -> [MenuBarItem]
     func press(_ item: MenuBarItem) throws
+
+    /// 현재 화면상에서 `boundaryX`보다 왼쪽(메뉴바 영역)에 위치한 항목들을 찾는다.
+    /// Stewardie의 구분선이 확장되어 항목들을 화면 밖으로 밀어냈을 때,
+    /// "지금 보관함에 들어 있는 항목"을 보여주기 위한 읽기 전용 탐색이다.
+    func hiddenItems(leftOf boundaryX: CGFloat) throws -> [MenuBarItem]
 }
 
 enum MenuBarIconServiceError: LocalizedError {
@@ -66,6 +71,89 @@ final class MenuBarIconService: MenuBarIconProviding {
             var orderedItem = item
             orderedItem.order = index
             return orderedItem
+        }
+    }
+
+    func hiddenItems(leftOf boundaryX: CGFloat) throws -> [MenuBarItem] {
+        guard AccessibilityPermissionService.isTrusted else {
+            throw MenuBarIconServiceError.accessibilityPermissionMissing
+        }
+
+        // 메뉴바 영역(화면 위쪽 ~30pt)에 있으면서, 구분선 경계보다 왼쪽에 있는
+        // 항목만 골라낸다. AX는 화면 밖으로 밀려난 요소의 위치도 그대로 알려주므로
+        // (렌더링 여부와 무관하게 좌표를 보고하므로) 이 방식이 성립한다.
+        let menuBarYRange: ClosedRange<CGFloat> = -4...32
+        let ownBundleID = Bundle.main.bundleIdentifier
+
+        let candidateApps = NSWorkspace.shared.runningApplications.filter { app in
+            guard let bundleID = app.bundleIdentifier?.lowercased(), bundleID != ownBundleID?.lowercased() else {
+                return false
+            }
+            // 메뉴바 부가 아이콘은 보통 accessory 정책 앱이거나, 시스템 메뉴바 호스트들이 갖고 있다.
+            return app.activationPolicy == .accessory
+            || ["com.apple.systemuiserver", "com.apple.controlcenter"].contains(bundleID)
+        }
+
+        var results: [MenuBarItem] = []
+
+        for app in candidateApps {
+            guard results.count < 60 else { break }
+
+            let root = AXUIElementCreateApplication(app.processIdentifier)
+            var visited = Set<AXElementKey>()
+            collectHiddenCandidates(
+                in: root,
+                app: app,
+                depth: 0,
+                boundaryX: boundaryX,
+                yRange: menuBarYRange,
+                visited: &visited,
+                results: &results
+            )
+        }
+
+        return merge(results).enumerated().map { index, item in
+            var ordered = item
+            ordered.order = index
+            return ordered
+        }
+    }
+
+    private func collectHiddenCandidates(
+        in element: AXUIElement,
+        app: NSRunningApplication,
+        depth: Int,
+        boundaryX: CGFloat,
+        yRange: ClosedRange<CGFloat>,
+        visited: inout Set<AXElementKey>,
+        results: inout [MenuBarItem]
+    ) {
+        guard depth <= 6, results.count < 60 else {
+            return
+        }
+
+        let key = AXElementKey(element)
+        guard visited.insert(key).inserted else {
+            return
+        }
+
+        if let position = pointAttribute(kAXPositionAttribute, from: element),
+           yRange.contains(position.y),
+           position.x < boundaryX,
+           let candidate = menuItem(from: element, app: app, fallbackOrder: results.count) {
+            results.append(candidate)
+        }
+
+        for child in childElements(of: element) {
+            collectHiddenCandidates(
+                in: child,
+                app: app,
+                depth: depth + 1,
+                boundaryX: boundaryX,
+                yRange: yRange,
+                visited: &visited,
+                results: &results
+            )
         }
     }
 
