@@ -110,14 +110,43 @@ struct StewardieArchiveView: View {
 
                 Spacer()
 
-                Button {
-                    store.refreshHiddenSectionItems(boundaryX: divider.boundaryScreenX)
-                } label: {
-                    Label("새로고침", systemImage: "arrow.clockwise")
+                if store.hasAccessibilityPermission {
+                    Button {
+                        store.refreshHiddenSectionItems(boundaryX: divider.boundaryScreenX)
+                    } label: {
+                        Label("새로고침", systemImage: "arrow.clockwise")
+                    }
                 }
             }
 
-            if store.hiddenSectionItems.isEmpty {
+            // 권한이 없으면: 명확한 경고
+            if !store.hasAccessibilityPermission {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 12) {
+                        Image(systemName: "lock.shield")
+                            .font(.largeTitle)
+                            .foregroundStyle(.orange)
+                        Text("손쉬운 사용 권한이 필요해요")
+                            .font(.headline)
+                        Text("위의 설정 카드에서 \"권한 요청\" 또는 \"설정 열기\"를 눌러 권한을 허용해 주세요.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+
+                        Button {
+                            store.openAccessibilitySettings()
+                        } label: {
+                            Label("설정 열기", systemImage: "gearshape")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.vertical, 24)
+                    Spacer()
+                }
+            }
+            // 권한은 있지만 항목이 없으면: 빈 상태
+            else if store.hiddenSectionItems.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 6) {
@@ -131,7 +160,9 @@ struct StewardieArchiveView: View {
                     .padding(.vertical, 24)
                     Spacer()
                 }
-            } else {
+            }
+            // 권한 있고 항목도 있으면: 목록 표시
+            else {
                 LazyVStack(spacing: 8) {
                     ForEach(store.hiddenSectionItems) { item in
                         HiddenItemRow(item: item)
@@ -139,9 +170,11 @@ struct StewardieArchiveView: View {
                 }
             }
 
-            Text("이 목록은 위치 정보만으로 추정한 결과라 일부 앱은 표시되지 않을 수 있어요. 항목을 직접 조작하는 기능은 아니고, 참고용으로만 봐 주세요.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            if store.hasAccessibilityPermission {
+                Text("이 목록은 위치 정보만으로 추정한 결과라 일부 앱은 표시되지 않을 수 있어요. 항목을 직접 조작하는 기능은 아니고, 참고용으로만 봐 주세요.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))

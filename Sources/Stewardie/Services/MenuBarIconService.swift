@@ -4,12 +4,6 @@ import CoreGraphics
 import Foundation
 
 protocol MenuBarIconProviding {
-    var supportsDiscovery: Bool { get }
-    var supportsLiveControl: Bool { get }
-
-    func availableItems() throws -> [MenuBarItem]
-    func press(_ item: MenuBarItem) throws
-
     /// 현재 화면상에서 `boundaryX`보다 왼쪽(메뉴바 영역)에 위치한 항목들을 찾는다.
     /// Stewardie의 구분선이 확장되어 항목들을 화면 밖으로 밀어냈을 때,
     /// "지금 보관함에 들어 있는 항목"을 보여주기 위한 읽기 전용 탐색이다.
@@ -18,62 +12,16 @@ protocol MenuBarIconProviding {
 
 enum MenuBarIconServiceError: LocalizedError {
     case accessibilityPermissionMissing
-    case privateAPINotConnected
-    case noItemsFound
-    case itemNotActionable
-    case itemNotFound
-    case actionNotAvailable
-    case actionFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .accessibilityPermissionMissing:
             "Accessibility 권한을 허용해야 실제 메뉴바 항목을 탐색할 수 있어요."
-        case .privateAPINotConnected:
-            "실제 숨김/재배치 백엔드는 아직 연결되지 않았어요."
-        case .noItemsFound:
-            "접근 가능한 메뉴바 항목을 찾지 못했어요."
-        case .itemNotActionable:
-            "이 항목은 Accessibility 조작 대상이 아니에요."
-        case .itemNotFound:
-            "해당 메뉴바 항목을 다시 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
-        case .actionNotAvailable:
-            "이 항목은 Accessibility 누르기 동작을 지원하지 않아요."
-        case .actionFailed(let message):
-            "메뉴바 항목 누르기에 실패했어요. \(message)"
         }
     }
 }
 
 final class MenuBarIconService: MenuBarIconProviding {
-    var supportsDiscovery: Bool {
-        true
-    }
-
-    var supportsLiveControl: Bool {
-        false
-    }
-
-    func availableItems() throws -> [MenuBarItem] {
-        guard AccessibilityPermissionService.isTrusted else {
-            throw MenuBarIconServiceError.accessibilityPermissionMissing
-        }
-
-        let accessibilityItems = discoverAccessibilityMenuItems()
-        let windowItems = discoverMenuWindows(startingAt: accessibilityItems.count)
-        let items = merge(accessibilityItems + windowItems)
-
-        guard !items.isEmpty else {
-            throw MenuBarIconServiceError.noItemsFound
-        }
-
-        return items.enumerated().map { index, item in
-            var orderedItem = item
-            orderedItem.order = index
-            return orderedItem
-        }
-    }
-
     func hiddenItems(leftOf boundaryX: CGFloat) throws -> [MenuBarItem] {
         guard AccessibilityPermissionService.isTrusted else {
             throw MenuBarIconServiceError.accessibilityPermissionMissing
@@ -112,11 +60,7 @@ final class MenuBarIconService: MenuBarIconProviding {
             )
         }
 
-        return merge(results).enumerated().map { index, item in
-            var ordered = item
-            ordered.order = index
-            return ordered
-        }
+        return merge(results)
     }
 
     private func collectHiddenCandidates(
@@ -140,7 +84,7 @@ final class MenuBarIconService: MenuBarIconProviding {
         if let position = pointAttribute(kAXPositionAttribute, from: element),
            yRange.contains(position.y),
            position.x < boundaryX,
-           let candidate = menuItem(from: element, app: app, fallbackOrder: results.count) {
+           let candidate = menuItem(from: element, app: app) {
             results.append(candidate)
         }
 
@@ -157,149 +101,9 @@ final class MenuBarIconService: MenuBarIconProviding {
         }
     }
 
-    func press(_ item: MenuBarItem) throws {
-        guard AccessibilityPermissionService.isTrusted else {
-            throw MenuBarIconServiceError.accessibilityPermissionMissing
-        }
-
-        guard item.discoverySource == "Accessibility" else {
-            throw MenuBarIconServiceError.itemNotActionable
-        }
-
-        guard let element = findAccessibilityElement(matching: item) else {
-            throw MenuBarIconServiceError.itemNotFound
-        }
-
-        guard actionNames(of: element).contains(kAXPressAction as String) else {
-            throw MenuBarIconServiceError.actionNotAvailable
-        }
-
-        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
-        guard result == .success else {
-            throw MenuBarIconServiceError.actionFailed(String(describing: result))
-        }
-    }
-
-    private func discoverAccessibilityMenuItems() -> [MenuBarItem] {
-        let targetApps = NSWorkspace.shared.runningApplications.filter { app in
-            [
-                "com.apple.systemuiserver",
-                "com.apple.controlcenter"
-            ].contains(app.bundleIdentifier?.lowercased() ?? "")
-        }
-
-        return targetApps.flatMap { app in
-            discoverAccessibilityMenuItems(in: app)
-        }
-    }
-
-    private func discoverAccessibilityMenuItems(in app: NSRunningApplication) -> [MenuBarItem] {
-        let root = AXUIElementCreateApplication(app.processIdentifier)
-        var visited = Set<AXElementKey>()
-        var results: [MenuBarItem] = []
-        traverse(
-            root,
-            app: app,
-            depth: 0,
-            visited: &visited,
-            results: &results
-        )
-        return results
-    }
-
-    private func findAccessibilityElement(matching item: MenuBarItem) -> AXUIElement? {
-        let targetApps = NSWorkspace.shared.runningApplications.filter { app in
-            app.bundleIdentifier == item.bundleIdentifier
-        }
-
-        for app in targetApps {
-            let root = AXUIElementCreateApplication(app.processIdentifier)
-            var visited = Set<AXElementKey>()
-            if let element = findAccessibilityElement(
-                in: root,
-                app: app,
-                matching: item,
-                depth: 0,
-                visited: &visited
-            ) {
-                return element
-            }
-        }
-
-        return nil
-    }
-
-    private func findAccessibilityElement(
-        in element: AXUIElement,
-        app: NSRunningApplication,
-        matching item: MenuBarItem,
-        depth: Int,
-        visited: inout Set<AXElementKey>
-    ) -> AXUIElement? {
-        guard depth <= 7 else {
-            return nil
-        }
-
-        let key = AXElementKey(element)
-        guard visited.insert(key).inserted else {
-            return nil
-        }
-
-        if let candidate = menuItem(from: element, app: app, fallbackOrder: item.order),
-           candidate.identityKey == item.identityKey {
-            return element
-        }
-
-        for child in childElements(of: element) {
-            if let match = findAccessibilityElement(
-                in: child,
-                app: app,
-                matching: item,
-                depth: depth + 1,
-                visited: &visited
-            ) {
-                return match
-            }
-        }
-
-        return nil
-    }
-
-    private func traverse(
-        _ element: AXUIElement,
-        app: NSRunningApplication,
-        depth: Int,
-        visited: inout Set<AXElementKey>,
-        results: inout [MenuBarItem]
-    ) {
-        guard depth <= 7, results.count < 80 else {
-            return
-        }
-
-        let key = AXElementKey(element)
-        guard visited.insert(key).inserted else {
-            return
-        }
-
-        if let item = menuItem(from: element, app: app, fallbackOrder: results.count) {
-            results.append(item)
-        }
-
-        for child in childElements(of: element) {
-            traverse(
-                child,
-                app: app,
-                depth: depth + 1,
-                visited: &visited,
-                results: &results
-            )
-        }
-    }
-
     private func menuItem(
         from element: AXUIElement,
-        app: NSRunningApplication,
-        fallbackOrder: Int
+        app: NSRunningApplication
     ) -> MenuBarItem? {
         let role = stringAttribute(kAXRoleAttribute, from: element) ?? ""
         let subrole = stringAttribute(kAXSubroleAttribute, from: element) ?? ""
@@ -340,9 +144,7 @@ final class MenuBarIconService: MenuBarIconProviding {
             ownerName: ownerName,
             frameDescription: frame,
             discoverySource: "Accessibility",
-            isSystemItem: true,
-            visibility: .visible,
-            order: fallbackOrder
+            isSystemItem: true
         )
     }
 
@@ -382,47 +184,6 @@ final class MenuBarIconService: MenuBarIconProviding {
                 || name.localizedCaseInsensitiveContains("MenuBar")
                 || name.localizedCaseInsensitiveContains("Contents")
             }
-    }
-
-    private func discoverMenuWindows(startingAt offset: Int) -> [MenuBarItem] {
-        guard let rawWindows = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return []
-        }
-
-        return rawWindows.compactMap { windowInfo in
-            guard let owner = windowInfo[kCGWindowOwnerName as String] as? String,
-                  ["SystemUIServer", "Control Center"].contains(owner),
-                  let bounds = windowInfo[kCGWindowBounds as String] as? [String: Any],
-                  let x = bounds["X"] as? CGFloat,
-                  let y = bounds["Y"] as? CGFloat,
-                  let width = bounds["Width"] as? CGFloat,
-                  let height = bounds["Height"] as? CGFloat,
-                  y <= 30,
-                  height <= 60,
-                  width > 2 else {
-                return nil
-            }
-
-            let title = windowInfo[kCGWindowName as String] as? String
-            let windowNumber = windowInfo[kCGWindowNumber as String] as? Int ?? 0
-            let bundleIdentifier = owner == "Control Center" ? "com.apple.controlcenter" : "com.apple.systemuiserver"
-            let frame = "x:\(Int(x)) y:\(Int(y)) w:\(Int(width)) h:\(Int(height))"
-
-            return MenuBarItem(
-                title: title?.isEmpty == false ? title! : "\(owner) 항목",
-                bundleIdentifier: bundleIdentifier,
-                discoveryIdentifier: "CGWindow|\(owner)|\(windowNumber)|\(frame)",
-                ownerName: owner,
-                frameDescription: frame,
-                discoverySource: "CGWindow",
-                isSystemItem: true,
-                visibility: .visible,
-                order: offset + windowNumber
-            )
-        }
     }
 
     private func merge(_ items: [MenuBarItem]) -> [MenuBarItem] {
@@ -510,16 +271,6 @@ final class MenuBarIconService: MenuBarIconProviding {
             return nil
         }
         return value
-    }
-
-    private func actionNames(of element: AXUIElement) -> [String] {
-        var rawNames: CFArray?
-        guard AXUIElementCopyActionNames(element, &rawNames) == .success,
-              let names = rawNames as? [String] else {
-            return []
-        }
-
-        return names
     }
 }
 
