@@ -2,19 +2,21 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = MenuBarItemStore()
-    private var coverService: MenuBarCoverService?
+    private var controlItem: ControlItem?
     private var statusItem: NSStatusItem?
     private var controlPanelController: NSWindowController?
     private var keyEventMonitor: Any?
+
+    // MARK: - App Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         configureApplicationMenu()
         configureKeyboardShortcuts()
         configureStatusItem()
-        coverService = MenuBarCoverService(store: store)
+        controlItem = ControlItem(autosaveName: "Stewardie.HiddenSectionDivider")
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -25,12 +27,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let keyEventMonitor {
             NSEvent.removeMonitor(keyEventMonitor)
         }
-        coverService?.close()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
+
+    // MARK: - Application Menu (⌘Q, ⌘W)
 
     private func configureApplicationMenu() {
         let mainMenu = NSMenu()
@@ -61,6 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.mainMenu = mainMenu
     }
 
+    // MARK: - Keyboard Shortcuts
+
     private func configureKeyboardShortcuts() {
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard
@@ -84,111 +89,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    // MARK: - Status Item (Menu Bar Icon)
+
     private func configureStatusItem() {
         let statusItem = NSStatusBar.system.statusItem(withLength: 24)
+        statusItem.autosaveName = "Stewardie.MainIcon"
 
         if let button = statusItem.button {
             button.toolTip = StewardieConstants.appName
-            button.title = ""
             button.image = StewardieMenuBarIcon.image()
             button.imagePosition = .imageOnly
+            button.target = self
+            button.action = #selector(statusItemClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
-        statusItem.menu = makeMenu()
+        // menu는 설정하지 않음 — 클릭 동작을 직접 제어
         self.statusItem = statusItem
     }
 
-    private func makeMenu() -> NSMenu {
+    // MARK: - Click Handling
+
+    /// 좌클릭 → 숨긴 항목 토글
+    /// 우클릭 / ⌥클릭 / ⌃클릭 → 메뉴 표시
+    @objc private func statusItemClicked() {
+        guard let event = NSApp.currentEvent else { return }
+
+        if event.type == .rightMouseUp
+            || event.modifierFlags.contains(.option)
+            || event.modifierFlags.contains(.control)
+        {
+            showStatusMenu()
+        } else {
+            controlItem?.toggle()
+        }
+    }
+
+    private func showStatusMenu() {
+        guard let button = statusItem?.button else { return }
+        let menu = makeStatusMenu()
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: button.bounds.height + 5),
+            in: button
+        )
+    }
+
+    // MARK: - Status Menu
+
+    private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.delegate = self
-        populateMenu(menu)
-        return menu
-    }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        populateMenu(menu)
-    }
+        let isHiding = controlItem?.isHiding ?? false
 
-    private func populateMenu(_ menu: NSMenu) {
-        menu.removeAllItems()
-
-        let hiddenMenuItem = NSMenuItem(title: "숨김 보관함", action: nil, keyEquivalent: "")
-        hiddenMenuItem.submenu = makeHiddenItemsMenu()
-        menu.addItem(hiddenMenuItem)
-
-        menu.addItem(NSMenuItem(
-            title: "모두 표시 목록으로",
-            action: #selector(revealHiddenItems),
+        // 토글 항목
+        let toggleItem = NSMenuItem(
+            title: isHiding ? "숨긴 항목 보이기" : "항목 숨기기",
+            action: #selector(toggleHiddenSection),
             keyEquivalent: ""
-        ))
-
-        menu.addItem(NSMenuItem(
-            title: "관리 패널 열기",
-            action: #selector(openControlPanel),
-            keyEquivalent: ","
-        ))
-
-        menu.addItem(NSMenuItem(
-            title: "항목 새로고침",
-            action: #selector(refreshItems),
-            keyEquivalent: "r"
-        ))
+        )
+        toggleItem.target = self
+        menu.addItem(toggleItem)
 
         menu.addItem(.separator())
 
-        menu.addItem(NSMenuItem(
+        // 관리 패널
+        let panelItem = NSMenuItem(
+            title: "관리 패널 열기",
+            action: #selector(openControlPanel),
+            keyEquivalent: ","
+        )
+        panelItem.target = self
+        menu.addItem(panelItem)
+
+        // 새로고침
+        let refreshItem = NSMenuItem(
+            title: "메뉴바 항목 새로고침",
+            action: #selector(refreshItems),
+            keyEquivalent: "r"
+        )
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        menu.addItem(.separator())
+
+        // 종료
+        let quitItem = NSMenuItem(
             title: "Stewardie 종료",
             action: #selector(quitStewardie),
             keyEquivalent: "q"
-        ))
-
-        for item in menu.items {
-            item.target = self
-        }
-    }
-
-    private func makeHiddenItemsMenu() -> NSMenu {
-        let menu = NSMenu()
-        let hiddenItems = store.hiddenItems
-
-        guard !hiddenItems.isEmpty else {
-            let emptyItem = NSMenuItem(title: "숨김 항목 없음", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-            menu.addItem(emptyItem)
-            return menu
-        }
-
-        for item in hiddenItems {
-            let menuItem = NSMenuItem(
-                title: item.title,
-                action: #selector(activateMenuBarItemFromMenu(_:)),
-                keyEquivalent: ""
-            )
-            menuItem.target = self
-            menuItem.representedObject = item.id.uuidString
-            menuItem.isEnabled = item.discoverySource == "Accessibility"
-            menuItem.toolTip = item.detailText.isEmpty ? nil : item.detailText
-            menu.addItem(menuItem)
-        }
+        )
+        quitItem.target = self
+        menu.addItem(quitItem)
 
         return menu
     }
 
-    @objc private func activateMenuBarItemFromMenu(_ sender: NSMenuItem) {
-        guard
-            let idString = sender.representedObject as? String,
-            let id = UUID(uuidString: idString),
-            let item = store.items.first(where: { $0.id == id })
-        else {
-            return
-        }
+    // MARK: - Actions
 
-        store.activate(item)
-    }
-
-    @objc private func revealHiddenItems() {
-        store.revealHiddenItems()
-        showControlPanel()
+    @objc private func toggleHiddenSection() {
+        controlItem?.toggle()
     }
 
     @objc private func openControlPanel() {
@@ -209,6 +209,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.performClose(nil)
         }
     }
+
+    // MARK: - Control Panel
 
     private func showControlPanel() {
         store.refreshAccessibilityPermission()
