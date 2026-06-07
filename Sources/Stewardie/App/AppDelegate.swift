@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let store = MenuBarItemStore()
+    private var coverService: MenuBarCoverService?
     private var statusItem: NSStatusItem?
     private var controlPanelController: NSWindowController?
     private var keyEventMonitor: Any?
@@ -13,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configureApplicationMenu()
         configureKeyboardShortcuts()
         configureStatusItem()
+        coverService = MenuBarCoverService(store: store)
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -23,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let keyEventMonitor {
             NSEvent.removeMonitor(keyEventMonitor)
         }
+        coverService?.close()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
