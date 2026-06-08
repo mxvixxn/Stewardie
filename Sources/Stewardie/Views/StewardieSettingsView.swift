@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct StewardieSettingsView: View {
     @ObservedObject var store: MenuBarItemStore
+    @ObservedObject var updater: UpdateService
     @State private var launchAtLogin = LaunchAtLoginService.isEnabled
     @State private var launchAtLoginErrorMessage: String?
 
@@ -147,12 +149,90 @@ struct StewardieSettingsView: View {
             }
             .font(.subheadline)
 
-            Text("자동 업데이트 확인 기능은 아직 준비 중이에요. 새 버전은 GitHub 릴리스 페이지에서 직접 내려받아 설치해 주세요.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Divider()
+
+            updateRow
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private var updateRow: some View {
+        switch updater.status {
+        case .idle:
+            updateLine(
+                icon: "arrow.triangle.2.circlepath",
+                tint: .secondary,
+                text: "GitHub에서 새 버전을 확인할 수 있어요.",
+                trailing: { checkButton(title: "업데이트 확인") }
+            )
+
+        case .checking:
+            updateLine(
+                icon: "arrow.triangle.2.circlepath",
+                tint: .secondary,
+                text: "확인 중…",
+                trailing: { ProgressView().controlSize(.small) }
+            )
+
+        case .upToDate:
+            updateLine(
+                icon: "checkmark.circle",
+                tint: .green,
+                text: "최신 버전을 사용 중이에요.",
+                trailing: { checkButton(title: "다시 확인") }
+            )
+
+        case let .updateAvailable(latest, url):
+            updateLine(
+                icon: "sparkles",
+                tint: .blue,
+                text: "새 버전 v\(latest)이 나왔어요!",
+                trailing: {
+                    Button {
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("다운로드", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            )
+
+        case let .failed(message):
+            updateLine(
+                icon: "exclamationmark.triangle",
+                tint: .orange,
+                text: message,
+                trailing: { checkButton(title: "다시 시도") }
+            )
+        }
+    }
+
+    private func updateLine<Trailing: View>(
+        icon: String,
+        tint: Color,
+        text: String,
+        @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            trailing()
+        }
+    }
+
+    private func checkButton(title: String) -> some View {
+        Button {
+            Task { await updater.checkForUpdates() }
+        } label: {
+            Label(title, systemImage: "arrow.clockwise")
+        }
     }
 
     // MARK: - Developer

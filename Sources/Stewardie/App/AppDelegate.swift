@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = MenuBarItemStore()
+    private let updater = UpdateService()
     private var divider: StewardieDivider?
     private var statusItem: NSStatusItem?
     private var archiveWindowController: NSWindowController?
@@ -18,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureKeyboardShortcuts()
         configureStatusItem()
         divider = StewardieDivider(autosaveName: "Stewardie.HiddenSectionDivider")
+
+        // 실행 시 조용히 업데이트 확인 (결과는 설정 화면 / 우클릭 메뉴에 반영)
+        Task { await updater.checkForUpdates() }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -146,6 +150,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
 
+        // 새 버전 알림 (있을 때만 맨 위에 표시)
+        if let update = updater.availableUpdate {
+            let updateItem = NSMenuItem(
+                title: "새 버전 v\(update.version) 다운로드",
+                action: #selector(openDownloadPage),
+                keyEquivalent: ""
+            )
+            updateItem.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "업데이트")
+            updateItem.target = self
+            menu.addItem(updateItem)
+            menu.addItem(.separator())
+        }
+
         // 보관함
         let archiveItem = NSMenuItem(
             title: "보관함 열기",
@@ -181,6 +198,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Actions
+
+    @objc private func openDownloadPage() {
+        if let update = updater.availableUpdate {
+            NSWorkspace.shared.open(update.url)
+        }
+    }
 
     @objc private func openArchive() {
         showArchive()
@@ -227,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showSettings() {
         if settingsWindowController == nil {
-            let rootView = StewardieSettingsView(store: store)
+            let rootView = StewardieSettingsView(store: store, updater: updater)
             let hostingController = NSHostingController(rootView: rootView)
             let window = NSWindow(contentViewController: hostingController)
 

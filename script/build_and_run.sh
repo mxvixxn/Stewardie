@@ -5,7 +5,7 @@ MODE="${1:-run}"
 APP_NAME="Stewardie"
 BUNDLE_ID="com.mxvixxn.Stewardie"
 MIN_SYSTEM_VERSION="13.0"
-APP_VERSION="1.0.1"
+APP_VERSION="1.0.2"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"

@@ -143,8 +143,7 @@ final class MenuBarIconService: MenuBarIconProviding {
             discoveryIdentifier: discoveryIdentifier,
             ownerName: ownerName,
             frameDescription: frame,
-            discoverySource: "Accessibility",
-            isSystemItem: true
+            discoverySource: "Accessibility"
         )
     }
 

@@ -1,6 +1,6 @@
 import Foundation
 
-struct MenuBarItem: Codable, Equatable, Hashable, Identifiable {
+struct MenuBarItem: Equatable, Hashable, Identifiable {
     let id: UUID
     var title: String
     var bundleIdentifier: String?
@@ -8,7 +8,6 @@ struct MenuBarItem: Codable, Equatable, Hashable, Identifiable {
     var ownerName: String?
     var frameDescription: String?
     var discoverySource: String?
-    var isSystemItem: Bool
 
     init(
         id: UUID = UUID(),
@@ -17,8 +16,7 @@ struct MenuBarItem: Codable, Equatable, Hashable, Identifiable {
         discoveryIdentifier: String? = nil,
         ownerName: String? = nil,
         frameDescription: String? = nil,
-        discoverySource: String? = nil,
-        isSystemItem: Bool = false
+        discoverySource: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -27,7 +25,6 @@ struct MenuBarItem: Codable, Equatable, Hashable, Identifiable {
         self.ownerName = ownerName
         self.frameDescription = frameDescription
         self.discoverySource = discoverySource
-        self.isSystemItem = isSystemItem
     }
 
     var identityKey: String {
